@@ -296,7 +296,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
         "test_f1": float(f1),
         "test_threshold":best_threshold,
     }
-    f = open("../results/unixcoder/{}_res.txt".format(args.project), "a")
+    f = open("../results/unixcoder/{}_res.txt".format(args.rq), "a")
     for key in sorted(result.keys()):
         f.write(key+"="+str(round(result[key],4))+"\n")
 
@@ -307,7 +307,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
 def write_raw_preds_csv(args, y_preds):
     df = pd.read_csv(args.test_data_file)
     df["raw_preds"] = y_preds
-    df.to_csv("../results/unixcoder/{}_raw_preds.csv".format(args.project), index=False)
+    df.to_csv("../results/unixcoder/{}_raw_preds.csv".format(args.rq), index=False)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -404,7 +404,7 @@ def main():
                         help="Whether to use non-pretrained bpe tokenizer.")
     parser.add_argument('--n_gpu', type=int, default=1,
                         help="using which gpu")
-    parser.add_argument('--project', type=str, default='',
+    parser.add_argument('--rq', type=str, default='',
                         help="using which gpu")
     args = parser.parse_args()
     # Setup CUDA, GPU
