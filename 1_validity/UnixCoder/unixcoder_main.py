@@ -34,7 +34,7 @@ from linevul_model import Model
 import pandas as pd
 # metrics
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
-from sklearn.metrics import auc
+from sklearn.metrics import roc_auc_score,matthews_corrcoef
 # model reasoning
 from captum.attr import LayerIntegratedGradients, DeepLift, DeepLiftShap, GradientShap, Saliency
 # word-level tokenizer
@@ -63,8 +63,8 @@ class TextDataset(Dataset):
             file_path = args.test_data_file
         self.examples = []
         df = pd.read_csv(file_path)
-        funcs = df["warning_line"].tolist()
-        labels = df["final_label"].tolist()
+        funcs = df["source"].tolist()
+        labels = df["target"].tolist()
         for i in tqdm(range(len(funcs))):
             self.examples.append(convert_examples_to_features(funcs[i], labels[i], tokenizer, args))
         if file_type == "train":
@@ -289,11 +289,15 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
     recall = recall_score(y_trues, y_preds)
     precision = precision_score(y_trues, y_preds)
     f1 = f1_score(y_trues, y_preds)
+    mcc = matthews_corrcoef(y_trues, y_preds)
+    auc = roc_auc_score(y_trues,y_preds)
     result = {
         "test_accuracy": float(acc),
         "test_recall": float(recall),
         "test_precision": float(precision),
         "test_f1": float(f1),
+        'test_auc:': float(auc),
+        'test_mcc:': float(mcc),
         "test_threshold":best_threshold,
     }
     f = open("../results/unixcoder/{}_res.txt".format(args.rq), "a")
