@@ -456,7 +456,7 @@ def main():
         output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))
         if not args.nofinetune:
             model.load_state_dict(torch.load(output_dir, map_location=args.device))
-            model.to(args.device)
+        model.to(args.device)
         test_dataset = TextDataset(tokenizer, args, file_type='test')
         test(args, model, tokenizer, test_dataset, best_threshold=0.5)
     return results

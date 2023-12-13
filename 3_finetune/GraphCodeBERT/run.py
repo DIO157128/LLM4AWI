@@ -22,7 +22,7 @@ if __name__ =="__main__":
         os.system("python graphcodebert_main.py \
           --output_dir=../results/saved_models \
           --model_type=roberta \
-          --nofinetune \
+          --do_train \
           --do_test \
           --train_data_file=../../data/awi_train.csv \
           --eval_data_file=../../data/awi_val.csv \

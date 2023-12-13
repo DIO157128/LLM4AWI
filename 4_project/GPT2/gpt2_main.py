@@ -27,7 +27,8 @@ import torch
 from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
-                          RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer)
+                          RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer, GPT2Config, GPT2Tokenizer,
+                          GPT2ForSequenceClassification)
 from tqdm import tqdm
 import multiprocessing
 from linevul_model import Model
@@ -63,13 +64,8 @@ class TextDataset(Dataset):
             file_path = args.test_data_file
         self.examples = []
         df = pd.read_csv(file_path)
-        if file_type == "train":
-            funcs = df["source"].tolist()[:int(len(df["source"].tolist())*args.fine_tune_factor)]
-            labels = df["target"].tolist()[:int(len(df["target"].tolist())*args.fine_tune_factor)]
-            print(len(funcs))
-        else:
-            funcs = df["source"].tolist()
-            labels = df["target"].tolist()
+        funcs = df["source"].tolist()
+        labels = df["target"].tolist()
         for i in tqdm(range(len(funcs))):
             self.examples.append(convert_examples_to_features(funcs[i], labels[i], tokenizer, args))
         if file_type == "train":
@@ -92,18 +88,18 @@ def convert_examples_to_features(func, label, tokenizer, args):
         encoded = encoded.ids
         if len(encoded) > 510:
             encoded = encoded[:510]
-        encoded.insert(0, 0)
-        encoded.append(2)
+        encoded.insert(0, 50256)
+        encoded.append(50256)
         if len(encoded) < 512:
             padding = 512 - len(encoded)
             for _ in range(padding):
-                encoded.append(1)
+                encoded.append(50257)
         source_ids = encoded
         source_tokens = []
         return InputFeatures(source_tokens, source_ids, label)
     # source
     code_tokens = tokenizer.tokenize(str(func))[:args.block_size-2]
-    source_tokens = [tokenizer.cls_token] + code_tokens + [tokenizer.sep_token]
+    source_tokens = [tokenizer.bos_token] + code_tokens + [tokenizer.eos_token]
     source_ids = tokenizer.convert_tokens_to_ids(source_tokens)
     padding_length = args.block_size - len(source_ids)
     source_ids += [tokenizer.pad_token_id] * padding_length
@@ -192,24 +188,15 @@ def train(args, train_dataset, model, tokenizer, eval_dataset):
                 avg_loss=round(np.exp((tr_loss - logging_loss) /(global_step- tr_nb)),4)
 
                 if global_step % args.save_steps == 0:
-                    results = evaluate(args, model, tokenizer, eval_dataset, eval_when_training=True)    
-                    
-                    # Save model checkpoint
-                    if results['eval_f1']>best_f1:
-                        best_f1=results['eval_f1']
-                        logger.info("  "+"*"*20)  
-                        logger.info("  Best f1:%s",round(best_f1,4))
-                        logger.info("  "+"*"*20)                          
-                        
-                        checkpoint_prefix = 'checkpoint-best-f1'
-                        output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))                        
-                        if not os.path.exists(output_dir):
-                            os.makedirs(output_dir)                        
-                        model_to_save = model.module if hasattr(model,'module') else model
-                        output_dir = os.path.join(output_dir, '{}'.format(args.model_name)) 
-                        torch.save(model_to_save.state_dict(), output_dir)
-                        logger.info("Saving model checkpoint to %s", output_dir)
-                        
+                    checkpoint_prefix = 'checkpoint-best-f1'
+                    output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+                    model_to_save = model.module if hasattr(model, 'module') else model
+                    output_dir = os.path.join(output_dir, '{}'.format(args.model_name))
+                    torch.save(model_to_save.state_dict(), output_dir)
+                    logger.info("Saving model checkpoint to %s", output_dir)
+
 def evaluate(args, model, tokenizer, eval_dataset, eval_when_training=False):
     #build dataloader
     eval_sampler = SequentialSampler(eval_dataset)
@@ -305,7 +292,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
         'test_mcc:': float(mcc),
         "test_threshold":best_threshold,
     }
-    f = open("../results/unixcoder/{}_{}_res.txt".format(args.project,args.fine_tune_factor), "a")
+    f = open("../results/gpt2/{}_res.txt".format(args.rq), "a")
     for key in sorted(result.keys()):
         f.write(key+"="+str(round(result[key],4))+"\n")
 
@@ -316,7 +303,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
 def write_raw_preds_csv(args, y_preds):
     df = pd.read_csv(args.test_data_file)
     df["raw_preds"] = y_preds
-    df.to_csv("../results/unixcoder/{}_{}_raw_preds.csv".format(args.project,args.fine_tune_factor), index=False)
+    df.to_csv("../results/gpt2/{}_raw_preds.csv".format(args.rq), index=False)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -413,12 +400,8 @@ def main():
                         help="Whether to use non-pretrained bpe tokenizer.")
     parser.add_argument('--n_gpu', type=int, default=1,
                         help="using which gpu")
-    parser.add_argument('--project', type=str, default='',
+    parser.add_argument('--rq', type=str, default='',
                         help="using which gpu")
-    parser.add_argument("--nofinetune", default=False, action='store_true',
-                        help="Whether to use word-level tokenizer.")
-    parser.add_argument("--fine_tune_factor", default=0, type=float,
-                        help="Effort@TopK%Recall: effort at catching top k percent of vulnerable lines")
     args = parser.parse_args()
     # Setup CUDA, GPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -428,11 +411,13 @@ def main():
     logger.warning("device: %s, n_gpu: %s",device, args.n_gpu,)
     # Set seed
     set_seed(args)
-    config = RobertaConfig.from_pretrained("microsoft/unixcoder-base")
-    config.num_labels = 1
-    config.num_attention_heads = args.num_attention_heads
-    tokenizer = RobertaTokenizer.from_pretrained("microsoft/unixcoder-base")
-    model = RobertaForSequenceClassification.from_pretrained("microsoft/unixcoder-base", config=config, ignore_mismatched_sizes=True)
+    config = GPT2Config.from_pretrained("microsoft/CodeGPT-small-java-adaptedGPT2")
+    config.pad_token_id = 50257
+    tokenizer = GPT2Tokenizer.from_pretrained('microsoft/CodeGPT-small-java-adaptedGPT2')
+    tokenizer.add_tokens(["<pad>"])
+    tokenizer.pad_token = "<pad>"
+    model = GPT2ForSequenceClassification.from_pretrained("microsoft/CodeGPT-small-java-adaptedGPT2", config=config, ignore_mismatched_sizes=True)
+    model.resize_token_embeddings(len(tokenizer))
     model = Model(model, config, tokenizer, args)
     logger.info("Training/evaluation parameters %s", args)
     # Training
@@ -450,9 +435,8 @@ def main():
         result=evaluate(args, model, tokenizer)   
     if args.do_test:
         checkpoint_prefix = f'checkpoint-best-f1/{args.model_name}'
-        output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))
-        if not args.nofinetune:
-            model.load_state_dict(torch.load(output_dir, map_location=args.device))
+        output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))  
+        model.load_state_dict(torch.load(output_dir, map_location=args.device))
         model.to(args.device)
         test_dataset = TextDataset(tokenizer, args, file_type='test')
         test(args, model, tokenizer, test_dataset, best_threshold=0.5)
