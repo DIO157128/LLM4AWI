@@ -8,7 +8,7 @@ def calculatemodel(model_name):
     auc = []
     mcc = []
     for project in projects:
-        path = model_name+'/{}_res.txt'.format(project)
+        path = model_name+'/rq44/{}_res.txt'.format(project)
         f = open(path,'r')
         lines = f.read().splitlines()
         precision.append(lines[4].split('=')[1])
@@ -23,7 +23,7 @@ def calculatemodel(model_name):
     df['f1'] = f1
     df['mcc'] = mcc
     df['auc'] = auc
-    df.to_csv('results/{}.csv'.format(model_name))
+    df.to_csv('results/rq44/{}.csv'.format(model_name))
 if __name__ == '__main__':
     calculatemodel('codet5')
     calculatemodel('codebert')

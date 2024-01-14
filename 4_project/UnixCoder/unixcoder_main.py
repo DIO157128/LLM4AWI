@@ -291,7 +291,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
         'test_mcc:': float(mcc),
         "test_threshold":best_threshold,
     }
-    f = open("../results/unixcoder/{}_res.txt".format(args.rq), "a")
+    f = open("../results/unixcoder/{}/{}_res.txt".format(args.rq,args.project), "a")
     for key in sorted(result.keys()):
         f.write(key+"="+str(round(result[key],4))+"\n")
 
@@ -302,7 +302,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
 def write_raw_preds_csv(args, y_preds):
     df = pd.read_csv(args.test_data_file)
     df["raw_preds"] = y_preds
-    df.to_csv("../results/unixcoder/{}_raw_preds.csv".format(args.rq), index=False)
+    df.to_csv("../results/unixcoder/{}/{}_raw_preds.csv".format(args.rq,args.project), index=False)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -401,6 +401,8 @@ def main():
                         help="using which gpu")
     parser.add_argument('--rq', type=str, default='',
                         help="using which gpu")
+    parser.add_argument('--project', type=str, default='',
+                        help="using which gpu")
     args = parser.parse_args()
     # Setup CUDA, GPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -410,11 +412,11 @@ def main():
     logger.warning("device: %s, n_gpu: %s",device, args.n_gpu,)
     # Set seed
     set_seed(args)
-    config = RobertaConfig.from_pretrained("microsoft/unixcoder-base")
+    config = RobertaConfig.from_pretrained("/mnt/sdb/zhaoyuan/zhangquanjun/ybw/models/unixcoder")
     config.num_labels = 1
     config.num_attention_heads = args.num_attention_heads
-    tokenizer = RobertaTokenizer.from_pretrained("microsoft/unixcoder-base")
-    model = RobertaForSequenceClassification.from_pretrained("microsoft/unixcoder-base", config=config, ignore_mismatched_sizes=True)
+    tokenizer = RobertaTokenizer.from_pretrained("/mnt/sdb/zhaoyuan/zhangquanjun/ybw/models/unixcoder")
+    model = RobertaForSequenceClassification.from_pretrained("/mnt/sdb/zhaoyuan/zhangquanjun/ybw/models/unixcoder", config=config, ignore_mismatched_sizes=True)
     model = Model(model, config, tokenizer, args)
     logger.info("Training/evaluation parameters %s", args)
     # Training
@@ -431,9 +433,10 @@ def main():
         model.to(args.device)
         result=evaluate(args, model, tokenizer)   
     if args.do_test:
-        checkpoint_prefix = f'checkpoint-best-f1/{args.model_name}'
-        output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))  
-        model.load_state_dict(torch.load(output_dir, map_location=args.device))
+        if args.rq!='rq42':
+            checkpoint_prefix = f'checkpoint-best-f1/{args.model_name}'
+            output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))
+            model.load_state_dict(torch.load(output_dir, map_location=args.device))
         model.to(args.device)
         test_dataset = TextDataset(tokenizer, args, file_type='test')
         test(args, model, tokenizer, test_dataset, best_threshold=0.5)
